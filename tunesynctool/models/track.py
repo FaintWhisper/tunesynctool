@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import List, Optional, Self
 
-from tunesynctool.utilities import clean_str, calculate_str_similarity, calculate_int_closeness
+from tunesynctool.utilities import clean_str, calculate_str_similarity, calculate_int_closeness, extract_core_title
 
 @dataclass
 class Track:
@@ -74,15 +74,45 @@ class Track:
         elif (self.musicbrainz_id and other.musicbrainz_id) and self.musicbrainz_id == other.musicbrainz_id:
             return True
         
+        # Compare both full titles and core titles (without featured artists/version info)
         title_similarity = calculate_str_similarity(clean_str(self.title), clean_str(other.title))
+        core_title_similarity = calculate_str_similarity(
+            clean_str(extract_core_title(self.title)), 
+            clean_str(extract_core_title(other.title))
+        )
+        # Use the better of the two similarities
+        best_title_similarity = max(title_similarity, core_title_similarity)
+        
         artist_similarity = calculate_str_similarity(clean_str(self.primary_artist), clean_str(other.primary_artist))
 
-        if title_similarity < 0.65 or artist_similarity < 0.6:
+        # If title similarity is very low, it's definitely not a match
+        if best_title_similarity < 0.65:
             return False
+        
+        # For artist similarity, be more lenient since:
+        # 1. Featured artists may be included differently (in title vs as separate artist)
+        # 2. Collaborations may list artists in different order
+        # 3. Artist names may have different capitalization or separators
+        # Allow matches with lower artist similarity if title similarity is high
+        if artist_similarity < 0.5:
+            # If title is very similar, check if one artist string contains parts of the other
+            if best_title_similarity >= 0.85:
+                # Check if any word from one artist appears in the other
+                self_artist_words = set(clean_str(self.primary_artist).split())
+                other_artist_words = set(clean_str(other.primary_artist).split())
+                
+                # If there's any overlap in artist names, consider it valid
+                if self_artist_words & other_artist_words:
+                    # Boost artist similarity more for word overlap to ensure match passes threshold
+                    artist_similarity = 0.7
+                else:
+                    return False
+            else:
+                return False
         
         weights = {
             'title': 4.0,
-            'artist': 3.0,
+            'artist': 2.5,  # Reduced from 3.0 to be more lenient
             'album': 1.25 if self.album_name and other.album_name else 0.75,
             'duration': 0.75,
             'track': 0.5 if self.track_number and other.track_number else 0,
@@ -90,7 +120,7 @@ class Track:
         }
 
         variables = [
-            title_similarity * weights['title'],
+            best_title_similarity * weights['title'],
             artist_similarity * weights['artist'],
             calculate_str_similarity(clean_str(self.album_name), clean_str(other.album_name)) * weights['album'],
             calculate_int_closeness(self.duration_seconds, other.duration_seconds) * weights['duration'],

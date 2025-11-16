@@ -4,7 +4,7 @@ from tunesynctool.drivers import ServiceDriver
 from tunesynctool.exceptions import TrackNotFoundException
 from tunesynctool.models import Track
 from tunesynctool.integrations import Musicbrainz
-from tunesynctool.utilities import clean_str
+from tunesynctool.utilities import clean_str, extract_core_title
 
 class TrackMatcher:
     """
@@ -84,22 +84,68 @@ class TrackMatcher:
     
     def __search_with_text(self, track: Track) -> Optional[Track]:
         """
-        Searches for tracks using plain text.
+        Searches for tracks using plain text with multiple query variations.
         """
 
-        queries = [
-            f'{clean_str(track.primary_artist)} {clean_str(track.title)}',
-            f'{clean_str(track.title)}',
-            f'{clean_str(track.primary_artist)}'
-        ]
+        # Get base strings
+        title_clean = clean_str(track.title)
+        artist_clean = clean_str(track.primary_artist)
+        title_core = clean_str(extract_core_title(track.title))
+        
+        # Create multiple query variations to maximize chances of finding a match
+        queries = []
+        
+        # Strategy 1: Full artist + full title
+        if artist_clean and title_clean:
+            queries.append(f'{artist_clean} {title_clean}')
+        
+        # Strategy 2: Artist + core title (without remix/feat info)
+        if artist_clean and title_core and title_core != title_clean:
+            queries.append(f'{artist_clean} {title_core}')
+        
+        # Strategy 3: Core title only (works well when artist metadata differs)
+        if title_core:
+            queries.append(title_core)
+        
+        # Strategy 4: Full title only
+        if title_clean and title_clean != title_core:
+            queries.append(title_clean)
+        
+        # Strategy 5: Artist only (last resort, will get many results)
+        if artist_clean:
+            queries.append(artist_clean)
 
         results: List[Track] = []
+        seen_ids = set()
+        
+        # Search with each query, collecting unique results
         for query in queries:
-            results.extend(self._target.search_tracks(
+            if not query:
+                continue
+            
+            # Use different limits based on query specificity
+            # More specific queries (artist + title) can have smaller limits
+            # Less specific queries (title only, artist only) need larger limits
+            if artist_clean and artist_clean in query and title_core and title_core in query:
+                limit = 30  # Artist + title queries
+            elif title_core and title_core in query and artist_clean not in query:
+                limit = 50  # Title-only queries need more results
+            else:
+                limit = 40  # Everything else
+                
+            search_results = self._target.search_tracks(
                 query=query,
-                limit=10
-            ))
+                limit=limit
+            )
+            
+            # Add only unique tracks
+            for result in search_results:
+                result_key = (result.service_id, result.service_name)
+                if result_key not in seen_ids:
+                    seen_ids.add(result_key)
+                    results.append(result)
 
+        # Try to find a match in all collected results
         for result in results:
             if track.matches(result):
                 return result

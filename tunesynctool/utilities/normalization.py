@@ -25,7 +25,9 @@ PUNCTUATION: Dict[str, str] = {
     '/': ' ', '\\': ' ',
     '_': ' ', '-': ' ',
     '.': ' ', ',': '',
-    ';': '', ':': ''
+    ';': '', ':': '',
+    '•': ' ',  # Bullet point used as separator in some music services
+    '·': ' ',  # Middle dot
 }
 
 def __apply_substitutions(text: str, substitutions: Dict[str, str]) -> str:
@@ -57,3 +59,32 @@ def clean_str(s: Optional[str]) -> str:
     text = __apply_substitutions(text, PUNCTUATION)
     
     return __normalize_whitespace(text)
+
+def remove_parenthetical(s: Optional[str]) -> str:
+    """
+    Removes parenthetical content from a string (content in parentheses, brackets, etc.).
+    Useful for removing remix info, featured artists, etc. from titles.
+    """
+    if not s:
+        return ''
+    
+    # Remove content in parentheses and brackets
+    text = re.sub(r'\([^)]*\)', '', s)
+    text = re.sub(r'\[[^\]]*\]', '', text)
+    
+    return text.strip()
+
+def extract_core_title(s: Optional[str]) -> str:
+    """
+    Extracts the core title by removing parenthetical content and trailing dashes/version info.
+    """
+    if not s:
+        return ''
+    
+    # Remove parenthetical content
+    text = remove_parenthetical(s)
+    
+    # Remove trailing dash content (like "- Radio Edit", "- Remix", etc.)
+    text = re.split(r'\s*-\s*(?:Radio Edit|Extended|Remix|Mix|Version|Edit|Remaster|Live|Acoustic|Instrumental)', text, flags=re.IGNORECASE)[0]
+    
+    return text.strip()

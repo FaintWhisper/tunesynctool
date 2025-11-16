@@ -1,2 +1,2 @@
-from .normalization import clean_str
+from .normalization import clean_str, remove_parenthetical, extract_core_title
 from .comparison import calculate_int_closeness, calculate_str_similarity
