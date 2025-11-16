@@ -42,6 +42,11 @@ class TrackMatcher:
         if track.matches(matched_track):
             return matched_track
 
+        # Strategy 4: Fallback with very lenient matching (ignores parenthetical content and lower threshold)
+        matched_track = self.__search_with_lenient_matching(track)
+        if matched_track:
+            return matched_track
+
         # At this point we haven't found any matches unfortunately
         return None
     
@@ -185,4 +190,49 @@ class TrackMatcher:
         except TrackNotFoundException as e:
             pass
 
+        return None
+    
+    def __search_with_lenient_matching(self, track: Track) -> Optional[Track]:
+        """
+        Fallback search with very lenient matching criteria.
+        Ignores parenthetical content and uses lower similarity thresholds.
+        """
+
+        # Extract core title (without parenthetical content)
+        core_title = clean_str(extract_core_title(track.title))
+        artist = clean_str(track.primary_artist)
+        
+        if not core_title or not artist:
+            return None
+        
+        # Search with just artist + core title
+        queries = [
+            f'{artist} {core_title}',
+            core_title,
+            artist
+        ]
+        
+        results: List[Track] = []
+        seen_ids = set()
+        
+        for query in queries:
+            if not query:
+                continue
+                
+            search_results = self._target.search_tracks(
+                query=query,
+                limit=50  # Cast a wide net
+            )
+            
+            for result in search_results:
+                result_key = (result.service_id, result.service_name)
+                if result_key not in seen_ids:
+                    seen_ids.add(result_key)
+                    results.append(result)
+        
+        # Try matching with much lower threshold (0.60 instead of 0.75)
+        for result in results:
+            if track.matches(result, threshold=0.60):
+                return result
+        
         return None
