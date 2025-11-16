@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional
 
 from tunesynctool.models import Playlist, Track, Configuration
+from tunesynctool.exceptions import UnsupportedFeatureException
 from .service_mapper import ServiceMapper
 
 """
@@ -83,10 +84,10 @@ class ServiceDriver(ABC):
 
         raise NotImplementedError()
     
-    # @abstractmethod
-    # def remove_tracks_from_playlist(self, playlist_id: str, track_ids: List[str]) -> None:
-    #     """Remove tracks from a playlist."""
-    #     raise NotImplementedError()
+    def remove_tracks_from_playlist(self, playlist_id: str, track_ids: List[str]) -> None:
+        """Remove tracks from a playlist if the service supports it."""
+
+        raise UnsupportedFeatureException('Removing tracks from playlists is not supported by this driver.')
 
     @abstractmethod
     def get_random_track(self) -> Optional['Track']:

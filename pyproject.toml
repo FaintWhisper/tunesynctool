@@ -4,9 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tunesynctool"
-version = "1.2.1"
+version = "1.4.0"
 authors = [
-    { name="WilliamNT", email="wntbox@gmail.com" }
+    { name="WilliamNT", email="wntbox@gmail.com" },
+    { name="FaintWhisper", email="amitkmbt@gmail.com" }
 ]
 description = "A package and CLI tool to build scripts that interact with various music streaming services."
 readme = "README.md"

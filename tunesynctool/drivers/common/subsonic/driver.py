@@ -104,6 +104,29 @@ class SubsonicDriver(ServiceDriver):
             )
         except Exception as e:
             raise ServiceDriverException(e)
+
+    def remove_tracks_from_playlist(self, playlist_id: str, track_ids: List[str]) -> None:
+        if not track_ids:
+            return
+
+        try:
+            # Get current playlist to find track indices
+            response = self.__subsonic.getPlaylist(pid=playlist_id)
+            current_tracks = response['playlist'].get('entry', [])
+            
+            # Find indices of tracks to remove
+            indices_to_remove = []
+            for i, track in enumerate(current_tracks):
+                if track.get('id') in track_ids:
+                    indices_to_remove.append(i)
+            
+            if indices_to_remove:
+                self.__subsonic.updatePlaylist(
+                    lid=playlist_id,
+                    songIndexesToRemove=indices_to_remove
+                )
+        except Exception as e:
+            raise ServiceDriverException(e)
         
     def get_random_track(self) -> Optional['Track']:
         try:

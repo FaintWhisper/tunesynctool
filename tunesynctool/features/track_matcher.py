@@ -230,6 +230,20 @@ class TrackMatcher:
                     seen_ids.add(result_key)
                     results.append(result)
         
+        # Sort results to prefer canonical versions over remixes/edits
+        # Canonical versions typically have shorter titles without version suffixes
+        def is_canonical(track_title: str) -> tuple:
+            """
+            Returns a tuple for sorting: (has_version_keywords, title_length)
+            Tracks without remix/version keywords and shorter titles are preferred.
+            """
+            lower_title = track_title.lower()
+            version_keywords = ['remix', 'mix', 'edit', 'version', 'remaster', 'extended', 'instrumental']
+            has_version = any(keyword in lower_title for keyword in version_keywords)
+            return (has_version, len(track_title))
+        
+        results.sort(key=lambda t: is_canonical(t.title))
+        
         # Try matching with much lower threshold (0.60 instead of 0.75)
         for result in results:
             if track.matches(result, threshold=0.60):

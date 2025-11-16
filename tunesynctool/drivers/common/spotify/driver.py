@@ -130,6 +130,21 @@ class SpotifyDriver(ServiceDriver):
             raise PlaylistNotFoundException(e)
         except Exception as e:
             raise ServiceDriverException(e)
+
+    def remove_tracks_from_playlist(self, playlist_id: str, track_ids: List[str]) -> None:
+        if not track_ids:
+            return
+
+        try:
+            for chunked_ids in batch(track_ids, 100):
+                self.__spotify.playlist_remove_all_occurrences_of_items(
+                    playlist_id=playlist_id,
+                    items=chunked_ids
+                )
+        except SpotifyException as e:
+            raise PlaylistNotFoundException(e)
+        except Exception as e:
+            raise ServiceDriverException(e)
         
     def get_random_track(self) -> Optional['Track']:
         raise UnsupportedFeatureException('Spotify does not support fetching a random track.')

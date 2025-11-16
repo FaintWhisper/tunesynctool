@@ -81,10 +81,17 @@ def extract_core_title(s: Optional[str]) -> str:
     if not s:
         return ''
     
-    # Remove parenthetical content
+    # Remove parenthetical content first
     text = remove_parenthetical(s)
     
-    # Remove trailing dash content (like "- Radio Edit", "- Remix", etc.)
-    text = re.split(r'\s*-\s*(?:Radio Edit|Extended|Remix|Mix|Version|Edit|Remaster|Live|Acoustic|Instrumental)', text, flags=re.IGNORECASE)[0]
+    # Remove everything after a dash followed by version/remix indicators
+    # This uses a simple greedy match: everything after "- " up to a version keyword
+    text = re.split(
+        r'\s*-\s*.+?'  # Dash, then anything (non-greedy)
+        r'\b(?:Edit|Remix|Mix|Version|Remaster|Live|Acoustic|Instrumental)\b',  # Followed by version keyword
+        text,
+        maxsplit=1,
+        flags=re.IGNORECASE
+    )[0]
     
     return text.strip()
