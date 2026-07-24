@@ -1,5 +1,3 @@
-import pytest
-
 from tunesynctool.models import Track
 
 class TestTrack:
@@ -25,7 +23,7 @@ class TestTrack:
         track2 = Track(service_id='1', service_name='another')
         assert track1 != track2
 
-    def test_fallback_values(self):
+    def test_defaults(self):
         track = Track()
         
         assert track.title == None

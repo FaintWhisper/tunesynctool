@@ -1,19 +1,37 @@
 from typing import Optional
 
-from tunesynctool.cli.utils.driver import get_driver_by_name, SUPPORTED_PROVIDERS
+from tunesynctool.cli.utils.driver import (
+    SOURCE_ONLY_PROVIDERS,
+    SUPPORTED_PROVIDERS,
+    get_driver_by_name,
+)
 from tunesynctool.drivers import ServiceDriver
 from tunesynctool.features import TrackMatcher
-from tunesynctool.exceptions import PlaylistNotFoundException
+from tunesynctool.models import MatchPolicy
+from tunesynctool.exceptions import (
+    OptionalDependencyException,
+    PlaylistNotFoundException,
+    ServiceDriverException,
+)
 
 from click import command, option, Choice, echo, argument, pass_obj, UsageError, style, Abort
 from tqdm import tqdm
+
+MATCH_POLICIES = [policy.value for policy in MatchPolicy]
 
 @command()
 @pass_obj
 @option('--from', 'from_provider', type=Choice(SUPPORTED_PROVIDERS), required=True, help='The provider to copy the playlist from.')
 @option('--to', 'to_provider', type=Choice(SUPPORTED_PROVIDERS), required=True, help='The target provider to copy the playlist to.')
 @option('--preview', 'is_preview', is_flag=True, show_default=True, default=False, help='Preview the transfer without actually touching the target service.')
-@option('--limit', 'limit', type=int, default=0, show_default=True, help='Limit the number of tracks to transfer. 0 or smaller means no limit. Default is 100. There is no upper limit, but be aware that some services may rate limit you.')
+@option('--limit', 'limit', type=int, default=0, show_default=True, help='Limit the number of tracks to transfer. 0 or smaller means no limit. There is no upper limit, but be aware that some services may rate limit you.')
+@option(
+    '--match-policy',
+    type=Choice(MATCH_POLICIES),
+    default=MatchPolicy.STRICT.value,
+    show_default=True,
+    help='Use strict recording matching or opt into relaxed matching.',
+)
 @argument('playlist_id', type=str, required=True)
 def transfer(
     ctx: Optional[dict],
@@ -21,30 +39,37 @@ def transfer(
     to_provider: str,
     playlist_id: str,
     is_preview: bool,
-    limit: int
+    limit: int,
+    match_policy: str,
     ):
     """Transfers a playlist from one provider to another."""
+
+    if to_provider in SOURCE_ONLY_PROVIDERS:
+        raise UsageError(
+            f"'{to_provider}' is read-only and can only be used as --from."
+        )
 
     try:
         source_driver: ServiceDriver = get_driver_by_name(from_provider)(ctx['config'])
         target_driver: ServiceDriver = get_driver_by_name(to_provider)(ctx['config'])
-    except ValueError as e:
-        raise UsageError(e)
+    except (OptionalDependencyException, ValueError) as e:
+        raise UsageError(str(e)) from e
     
     echo(style('Looking up playlist...', fg='blue'))
 
     try:
         source_playlist = source_driver.get_playlist(playlist_id)
         echo(style(f"Found playlist: {source_playlist}", fg='green'))
+        source_tracks = source_driver.get_playlist_tracks(
+            playlist_id=source_playlist.service_id,
+            limit=limit
+        )
     except PlaylistNotFoundException:
         raise UsageError('Source playlist ID is invalid.')
-    
-    source_tracks = source_driver.get_playlist_tracks(
-        playlist_id=source_playlist.service_id,
-        limit=limit
-    )
+    except (OptionalDependencyException, ServiceDriverException) as e:
+        raise UsageError(str(e)) from e
 
-    matcher = TrackMatcher(target_driver)
+    matcher = TrackMatcher(target_driver, policy=match_policy)
     matched_tracks = []
 
     for track in tqdm(source_tracks, desc='Matching tracks'):

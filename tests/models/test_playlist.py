@@ -1,5 +1,3 @@
-import pytest
-
 from tunesynctool.models import Playlist
 
 class TestPlaylist:
@@ -25,7 +23,7 @@ class TestPlaylist:
         playlist2 = Playlist(service_id='1', service_name='another')
         assert playlist1 != playlist2
 
-    def test_fallback_values(self):
+    def test_defaults(self):
         playlist = Playlist()
 
         assert playlist.name == 'Untitled Playlist [@tunesynctool]'

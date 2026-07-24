@@ -2,35 +2,35 @@
     "collaborative": false,
     "description": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam auctor, nunc nec ultricies ultricies, nunc chucks.",
     "external_urls": {
-        "spotify": "https://open.spotify.com/playlist/RUNAROUNDANDDESERTYOU"
+        "spotify": "https://open.spotify.com/playlist/EXAMPLEPLAYLISTID"
     },
-    "href": "https://api.spotify.com/v1/playlists/RUNAROUNDANDDESERTYOU",
-    "id": "RUNAROUNDANDDESERTYOU",
+    "href": "https://api.spotify.com/v1/playlists/EXAMPLEPLAYLISTID",
+    "id": "EXAMPLEPLAYLISTID",
     "images": [
         {
             "width": null,
             "height": null,
-            "url": "https://image-cdn-ak.spotifycdn.com/image/never-gonna-give-you-up"
+            "url": "https://image-cdn-ak.spotifycdn.com/image/example-playlist"
         }
     ],
     "name": "Lorem Ipsum: Dolor Sit Amet",
     "owner": {
-        "display_name": "Example Joe",
+        "display_name": "Example User",
         "external_urls": {
-            "spotify": "https://open.spotify.com/user/examplejoe"
+            "spotify": "https://open.spotify.com/user/example-user"
         },
-        "href": "https://api.spotify.com/v1/users/examplejoe",
-        "id": "examplejoe",
+        "href": "https://api.spotify.com/v1/users/example-user",
+        "id": "example-user",
         "type": "user",
-        "uri": "spotify:user:examplejoe"
+        "uri": "spotify:user:example-user"
     },
     "primary_color": null,
     "public": true,
-    "snapshot_id": "WERENOSTRANGERSTOLOVE",
+    "snapshot_id": "EXAMPLESNAPSHOTID",
     "tracks": {
-        "href": "https://api.spotify.com/v1/playlists/RUNAROUNDANDDESERTYOU/tracks",
+        "href": "https://api.spotify.com/v1/playlists/EXAMPLEPLAYLISTID/tracks",
         "total": 123
     },
     "type": "playlist",
-    "uri": "spotify:playlist:RUNAROUNDANDDESERTYOU"
+    "uri": "spotify:playlist:EXAMPLEPLAYLISTID"
 }

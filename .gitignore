@@ -170,3 +170,10 @@ cython_debug/
 demo.py
 navify_ytmusic_session.json
 tunesynctool_ytmusic_session.json
+
+# Local benchmark workspace
+#
+# Benchmark inputs and artifacts can contain playlist/track identifiers,
+# local-library identifiers, search traces, and human adjudications. Keep the
+# complete workspace local and publish only aggregate, sanitized results.
+/benchmarks/

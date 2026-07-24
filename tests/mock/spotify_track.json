@@ -9,51 +9,51 @@
         "available_markets": ["AR", "AU", "AT"],
         "type": "album",
         "album_type": "album",
-         "href": "https://api.spotify.com/v1/albums/KNOWNEACHOTHERFORSOLONG",
-         "id": "KNOWNEACHOTHERFORSOLONG",
+         "href": "https://api.spotify.com/v1/albums/EXAMPLEALBUMID",
+         "id": "EXAMPLEALBUMID",
          "images": [
             {
                 "width": 640,
                 "height": 640,
-                "url": "https://i.scdn.co/image/never-gonna-give-you-up"
+                "url": "https://i.scdn.co/image/example-album-large"
             },
             {
                 "width": 300,
                 "height": 300,
-                "url": "https://i.scdn.co/image/never-gonna-let-you-down"
+                "url": "https://i.scdn.co/image/example-album-small"
             }
         ],
         "name": "Lorem Ipsum: Dolor Sit Amet (Deluxe Edition)",
         "release_date": "1970-01-01",
         "release_date_precision": "day",
-        "uri": "spotify:album:KNOWNEACHOTHERFORSOLONG",
+        "uri": "spotify:album:EXAMPLEALBUMID",
         "artists": [
             {
                 "external_urls": {
-                    "spotify": "https://open.spotify.com/artist/RUNAROUNDANDDESERTYOU"
+                    "spotify": "https://open.spotify.com/artist/EXAMPLEARTISTID"
                 },
-                "href": "https://api.spotify.com/v1/artists/RUNAROUNDANDDESERTYOU",
-                "id": "RUNAROUNDANDDESERTYOU",
-                "name": "The Lorem Ipsumers",
+                "href": "https://api.spotify.com/v1/artists/EXAMPLEARTISTID",
+                "id": "EXAMPLEARTISTID",
+                "name": "Example Artist",
                 "type": "artist",
-                "uri": "spotify:artist:RUNAROUNDANDDESERTYOU"
+                "uri": "spotify:artist:EXAMPLEARTISTID"
             }
         ],
         "external_urls": {
-            "spotify": "https://open.spotify.com/album/KNOWNEACHOTHERFORSOLONG"
+            "spotify": "https://open.spotify.com/album/EXAMPLEALBUMID"
         },
         "total_tracks": 15
     },
     "artists": [
         {
             "external_urls": {
-                "spotify": "https://open.spotify.com/artist/RUNAROUNDANDDESERTYOU"
+                "spotify": "https://open.spotify.com/artist/EXAMPLEARTISTID"
             },
-            "href": "https://api.spotify.com/v1/artists/RUNAROUNDANDDESERTYOU",
-            "id": "RUNAROUNDANDDESERTYOU",
-            "name": "The Lorem Ipsumers",
+            "href": "https://api.spotify.com/v1/artists/EXAMPLEARTISTID",
+            "id": "EXAMPLEARTISTID",
+            "name": "Example Artist",
             "type": "artist",
-            "uri": "spotify:artist:RUNAROUNDANDDESERTYOU"
+            "uri": "spotify:artist:EXAMPLEARTISTID"
         }
     ],
     "disc_number": 1,
@@ -63,12 +63,12 @@
         "isrc": "USIR12345678"
     },
     "external_urls": {
-        "spotify": "https://open.spotify.com/track/WERENOSTRANGERSTOLOVE"
+        "spotify": "https://open.spotify.com/track/EXAMPLETRACKID"
     },
-    "href": "https://api.spotify.com/v1/tracks/WERENOSTRANGERSTOLOVE",
-    "id": "WERENOSTRANGERSTOLOVE",
-    "name": "Loremus Ipsumus :)",
+    "href": "https://api.spotify.com/v1/tracks/EXAMPLETRACKID",
+    "id": "EXAMPLETRACKID",
+    "name": "Example Track",
     "popularity": 100,
-    "uri": "spotify:track:WERENOSTRANGERSTOLOVE",
+    "uri": "spotify:track:EXAMPLETRACKID",
     "is_local": false
 }

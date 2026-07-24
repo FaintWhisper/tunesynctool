@@ -45,7 +45,7 @@ class DeezerDriver(ServiceDriver):
         )
 
     def get_user_playlists(self, limit: int = 25) -> List['Playlist']:
-        return UnsupportedFeatureException('Fetching user playlists from Deezer is not supported currently.')
+        raise UnsupportedFeatureException('Fetching user playlists from Deezer is not supported currently.')
 
     def get_playlist_tracks(self, playlist_id: str, limit: int = 100) -> List['Track']:
         try:

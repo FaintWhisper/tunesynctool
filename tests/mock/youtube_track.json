@@ -4,7 +4,7 @@
   "playableInEmbed": true,
   "audioOnlyPlayability": {
     "audioOnlyPlayabilityRenderer": {
-      "trackingParams": "RUNAROUNDANDDESERTYOU",
+      "trackingParams": "EXAMPLETRACKINGPARAMS",
       "audioOnlyAvailability": "FEATURE_AVAILABILITY_ALLOWED"
     }
   },
@@ -124,9 +124,9 @@
       },
       "videoDetails":{
          "videoId":"LOREMIPSUM",
-         "title":"Never Gonna Give You Up",
+         "title":"Example Track",
          "lengthSeconds":"222",
-         "channelId":"NEVERGONNALETYOUDOWN",
+         "channelId":"EXAMPLECHANNELID",
          "isOwnerViewing":false,
          "isCrawlable":true,
          "thumbnail":{
@@ -140,7 +140,7 @@
          },
          "allowRatings":true,
          "viewCount":"12345678",
-         "author":"Good Boy & John Smith",
+         "author":"Example Artist & Guest Artist",
          "isPrivate":false,
          "isUnpluggedCorpus":false,
          "musicVideoType":"MUSIC_VIDEO_TYPE_ATV",
@@ -149,8 +149,8 @@
       "microformat":{
          "microformatDataRenderer":{
             "urlCanonical":"https://example.com/watch?v=LOREMIPSUM",
-            "title":"Never Gonna Give You Up - YT Music",
-            "description":"Provided to YT by Lorem Ipsum Music Company Never Gonna Give You Up · Good Boy · John Smith Hotel Cabana ℗ 2013 Good Boy Recordings Limited, under exclusive licenc...",
+            "title":"Example Track - YT Music",
+            "description":"Provided to YT by Example Music Company · Example Artist · Guest Artist.",
             "thumbnail":{
                "thumbnails":[
                   {
@@ -178,20 +178,16 @@
             "paid":false,
             "familySafe":true,
             "tags":[
-               "Good Boy",
-               "ノーティボーイ",
-               "ノーティ・ボーイ",
-               "John Smith",
-               "サムスミス",
-               "サム・スミス",
-               "Hotel Cabana",
-               "Never Gonna Give You Up"
+               "Example Artist",
+               "Guest Artist",
+               "Example Album",
+               "Example Track"
             ],
             "availableCountries":["AE", "AR", "AS"],
             "pageOwnerDetails":{
-               "name":"Good Boy - Topic",
-               "externalChannelId":"NEVERGONNALETYOUDOWN",
-               "YTProfileUrl":"http://www.example.com/channel/NEVERGONNALETYOUDOWN"
+               "name":"Example Artist - Topic",
+               "externalChannelId":"EXAMPLECHANNELID",
+               "YTProfileUrl":"http://www.example.com/channel/EXAMPLECHANNELID"
             },
             "videoDetails":{
                "externalVideoId":"LOREMIPSUM",
@@ -207,12 +203,12 @@
                },
                {
                   "hrefUrl":"https://www.example.com/oembed?format=json&url=https%3A%2F%2Fexample.com%2Fwatch%3Fv%3DLOREMIPSUM",
-                  "title":"Never Gonna Give You Up",
+                  "title":"Example Track",
                   "alternateType":"application/json+oembed"
                },
                {
                   "hrefUrl":"https://www.example.com/oembed?format=xml&url=https%3A%2F%2Fexample.com%2Fwatch%3Fv%3DLOREMIPSUM",
-                  "title":"Never Gonna Give You Up",
+                  "title":"Example Track",
                   "alternateType":"text/xml+oembed"
                }
             ],

@@ -1,252 +1,444 @@
-from typing import List, Optional
+import logging
+from typing import Iterable, List, Optional, Sequence, Tuple
+
+from musicbrainzngs import MusicBrainzError
 
 from tunesynctool.drivers import ServiceDriver
 from tunesynctool.exceptions import TrackNotFoundException
-from tunesynctool.models import Track
 from tunesynctool.integrations import Musicbrainz
-from tunesynctool.utilities import clean_str, extract_core_title
+from tunesynctool.models.track import MatchAssessment, MatchPolicy, Track
+from tunesynctool.utilities import (
+    artist_entities,
+    calculate_str_similarity,
+    normalize_text,
+    parse_title,
+)
+
+
+logger = logging.getLogger(__name__)
+
 
 class TrackMatcher:
-    """
-    Attempts to find a matching track between the source and target services.
-    """
+    """Find the best compatible recording on a target service."""
 
-    def __init__(self, target_driver: ServiceDriver) -> None:
+    def __init__(
+        self,
+        target_driver: ServiceDriver,
+        *,
+        policy: MatchPolicy | str = MatchPolicy.STRICT,
+        minimum_margin: Optional[float] = None,
+    ) -> None:
         self._target = target_driver
+        self._policy = MatchPolicy.coerce(policy)
+        self._minimum_margin = (
+            0.04 if self._policy is MatchPolicy.STRICT else 0.03
+        ) if minimum_margin is None else minimum_margin
 
     def find_match(self, track: Track) -> Optional[Track]:
         """
-        Tries to match the track to one available on the target service itself.
+        Find a compatible target recording.
 
-        This is a best-effort operation and may not be perfect.
-        There is no guarantee that the tracks will be matched correctly or that any will be matched at all.
+        Authoritative service/ISRC/MusicBrainz identifiers are attempted
+        first. Text candidates are collected, deduplicated, and ranked; the
+        service's result order never decides the winner.
         """
 
-        # Strategy 0: If the track is suspected to originate from the same service, try to fetch it directly
-        matched_track = self.__search_on_origin_service(track)
-        if track.matches(matched_track):
-            return matched_track
-        
-        # Strategy 1: If the track has an ISRC, try to search for it directly
-        matched_track = self.__search_by_isrc_only(track)
-        if track.matches(matched_track):
-            return matched_track
-        
-        # Strategy 2: Using plain old text search
-        matched_track = self.__search_with_text(track)
-        if track.matches(matched_track):
-            return matched_track
+        direct_match = self.__search_on_origin_service(track)
+        if direct_match:
+            return direct_match
 
-        # Stategy 3: Using the ISRC + MusicBrainz ID
-        matched_track = self.__search_with_musicbrainz_id(track)
-        if track.matches(matched_track):
-            return matched_track
+        isrc_match = self.__search_by_isrc_only(track)
+        if isrc_match:
+            return isrc_match
 
-        # Strategy 4: Fallback with very lenient matching (ignores parenthetical content and lower threshold)
-        matched_track = self.__search_with_lenient_matching(track)
-        if matched_track:
-            return matched_track
+        known_mbid_match = self.__search_with_musicbrainz_id(
+            track,
+            musicbrainz_id=track.musicbrainz_id,
+        )
+        if known_mbid_match:
+            return known_mbid_match
 
-        # At this point we haven't found any matches unfortunately
-        return None
-    
-    def __get_musicbrainz_id(self, track: Track) -> Optional[str]:
-        """
-        Fetches the MusicBrainz ID for a track.
-        """
-
-        if track.musicbrainz_id:
-            return track.musicbrainz_id
-
-        # musicbrainz_id = Musicbrainz.id_from_isrc(track.isrc)
-        # if musicbrainz_id:
-        #     return musicbrainz_id
-        
-        return Musicbrainz.id_from_track(track)
-    
-    def __search_with_musicbrainz_id(self, track: Track) -> Optional[Track]:
-        """
-        Searches for tracks using a MusicBrainz ID.
-        Requires ISRC or Musicbrainz ID metadata to be available to work.
-        """
+        text_match = self.__search_with_text(track)
+        if text_match:
+            return text_match
 
         if not track.musicbrainz_id:
-            track.musicbrainz_id = self.__get_musicbrainz_id(track)
-        
-        if not track.musicbrainz_id:
-            return None
-        
-        if self._target.supports_musicbrainz_id_querying:
-            results = self._target.search_tracks(
-                query=track.musicbrainz_id,
-                limit=1
+            discovered_mbid = self.__get_musicbrainz_id(track)
+            return self.__search_with_musicbrainz_id(
+                track,
+                musicbrainz_id=discovered_mbid,
             )
 
-            if len(results) > 0:
-                return results[0]
-        
         return None
-    
-    def __search_with_text(self, track: Track) -> Optional[Track]:
-        """
-        Searches for tracks using plain text with multiple query variations.
-        """
 
-        # Get base strings
-        title_clean = clean_str(track.title)
-        artist_clean = clean_str(track.primary_artist)
-        title_core = clean_str(extract_core_title(track.title))
-        
-        # Create multiple query variations to maximize chances of finding a match
-        queries = []
-        
-        # Strategy 1: Full artist + full title
-        if artist_clean and title_clean:
-            queries.append(f'{artist_clean} {title_clean}')
-        
-        # Strategy 2: Artist + core title (without remix/feat info)
-        if artist_clean and title_core and title_core != title_clean:
-            queries.append(f'{artist_clean} {title_core}')
-        
-        # Strategy 3: Core title only (works well when artist metadata differs)
-        if title_core:
-            queries.append(title_core)
-        
-        # Strategy 4: Full title only
-        if title_clean and title_clean != title_core:
-            queries.append(title_clean)
-        
-        # Strategy 5: Artist only (last resort, will get many results)
-        if artist_clean:
-            queries.append(artist_clean)
+    def select_best_candidate(
+        self,
+        reference_track: Track,
+        candidates: Iterable[Track],
+    ) -> Optional[Track]:
+        """Select the highest-confidence candidate or abstain if ambiguous."""
 
-        results: List[Track] = []
-        seen_ids = set()
-        
-        # Search with each query, collecting unique results
-        for query in queries:
-            if not query:
+        assessed_by_key = {}
+        for candidate in candidates:
+            if candidate is None:
                 continue
-            
-            # Use different limits based on query specificity
-            # More specific queries (artist + title) can have smaller limits
-            # Less specific queries (title only, artist only) need larger limits
-            if artist_clean and artist_clean in query and title_core and title_core in query:
-                limit = 30  # Artist + title queries
-            elif title_core and title_core in query and artist_clean not in query:
-                limit = 50  # Title-only queries need more results
-            else:
-                limit = 40  # Everything else
-                
-            search_results = self._target.search_tracks(
-                query=query,
-                limit=limit
+
+            assessment = reference_track.evaluate_match(
+                candidate,
+                policy=self._policy,
             )
-            
-            # Add only unique tracks
-            for result in search_results:
-                result_key = (result.service_id, result.service_name)
-                if result_key not in seen_ids:
-                    seen_ids.add(result_key)
-                    results.append(result)
+            stable_key = self.__stable_candidate_key(candidate)
+            current = assessed_by_key.get(stable_key)
+            if (
+                current is None
+                or self.__assessment_rank(candidate, assessment)
+                > self.__assessment_rank(*current)
+            ):
+                assessed_by_key[stable_key] = (candidate, assessment)
 
-        # Try to find a match in all collected results
-        for result in results:
-            if track.matches(result):
-                return result
-            
-        return None
-    
+        assessed: List[Tuple[Track, MatchAssessment]] = list(
+            assessed_by_key.values()
+        )
+        if not assessed:
+            return None
+
+        assessed.sort(
+            key=lambda item: (
+                item[1].score,
+                item[1].evidence_coverage,
+                self.__stable_candidate_key(item[0]),
+                self.__candidate_metadata_key(item[0]),
+            ),
+            reverse=True,
+        )
+        best_candidate, best_assessment = assessed[0]
+        if not best_assessment.accepted:
+            logger.debug(
+                "Rejecting top match candidate: source=%s candidate=%s "
+                "score=%.3f evidence_coverage=%.3f reasons=%s",
+                reference_track,
+                best_candidate,
+                best_assessment.score,
+                best_assessment.evidence_coverage,
+                best_assessment.reasons,
+            )
+            return None
+
+        materially_different_runner_up = None
+        for candidate, assessment in assessed[1:]:
+            if (
+                assessment.score > 0
+                and not self.__same_recording_copy(best_candidate, candidate)
+            ):
+                materially_different_runner_up = (candidate, assessment)
+                break
+
+        if materially_different_runner_up and not best_assessment.authoritative:
+            _runner_up, runner_up_assessment = materially_different_runner_up
+            if best_assessment.score - runner_up_assessment.score < self._minimum_margin:
+                logger.debug(
+                    "Abstaining from ambiguous match: source=%s candidate=%s "
+                    "score=%.3f evidence_coverage=%.3f reasons=%s "
+                    "runner_up=%s runner_up_score=%.3f",
+                    reference_track,
+                    best_candidate,
+                    best_assessment.score,
+                    best_assessment.evidence_coverage,
+                    best_assessment.reasons,
+                    _runner_up,
+                    runner_up_assessment.score,
+                )
+                return None
+
+        return best_candidate
+
+    def __get_musicbrainz_id(self, track: Track) -> Optional[str]:
+        if not self._target.supports_musicbrainz_id_querying:
+            return None
+
+        try:
+            return Musicbrainz.id_from_track(track)
+        except MusicBrainzError as error:
+            logger.warning("MusicBrainz enrichment failed: %s", error)
+            return None
+
+    def __search_with_musicbrainz_id(
+        self,
+        track: Track,
+        *,
+        musicbrainz_id: Optional[str],
+    ) -> Optional[Track]:
+        if not musicbrainz_id or not self._target.supports_musicbrainz_id_querying:
+            return None
+
+        results = self._target.search_tracks(
+            query=musicbrainz_id,
+            limit=5,
+        )
+        return self.select_best_candidate(track, results)
+
+    def __search_with_text(self, track: Track) -> Optional[Track]:
+        candidate_pool: List[Track] = []
+        queried = set()
+
+        for tier in self.__query_plan(track):
+            for query, limit in tier:
+                query_key = self.__query_key(query)
+                if not query_key or query_key in queried:
+                    continue
+
+                queried.add(query_key)
+                candidate_pool.extend(
+                    self._target.search_tracks(
+                        query=query,
+                        limit=limit,
+                    )
+                )
+
+            best_candidate = self.select_best_candidate(track, candidate_pool)
+            if best_candidate:
+                assessment = track.evaluate_match(
+                    best_candidate,
+                    policy=self._policy,
+                )
+                if (
+                    assessment.authoritative
+                    or (
+                        assessment.score >= 0.93
+                        and assessment.evidence_coverage >= 0.8
+                    )
+                ):
+                    return best_candidate
+
+        return self.select_best_candidate(track, candidate_pool)
+
+    def __query_plan(
+        self,
+        track: Track,
+    ) -> Tuple[
+        Tuple[Tuple[str, int], ...],
+        Tuple[Tuple[str, int], ...],
+        Tuple[Tuple[str, int], ...],
+    ]:
+        title = parse_title(track.title)
+        base_title = title.base_title or track.title or ""
+        normalized_base = title.normalized_base_title
+        raw_title = (track.title or "").strip()
+        raw_primary_artist = (track.primary_artist or "").strip()
+        normalized_primary_artist = normalize_text(track.primary_artist)
+
+        credited_artists = []
+        for artist in (
+            [raw_primary_artist]
+            + list(track.additional_artists or [])
+            + list(title.featured_artists)
+        ):
+            artist = (artist or "").strip()
+            if artist and self.__query_key(artist) not in {
+                self.__query_key(existing) for existing in credited_artists
+            }:
+                credited_artists.append(artist)
+
+        specific_queries = []
+        if raw_primary_artist and raw_title:
+            specific_queries.extend([
+                (f"{raw_primary_artist} {raw_title}", 30),
+                (f"{raw_title} {raw_primary_artist}", 30),
+            ])
+        if raw_primary_artist and base_title:
+            specific_queries.extend([
+                (f"{raw_primary_artist} {base_title}", 30),
+                (f"{base_title} {raw_primary_artist}", 30),
+            ])
+        if normalized_primary_artist and normalized_base:
+            specific_queries.append(
+                (f"{normalized_primary_artist} {normalized_base}", 30)
+            )
+        for artist in credited_artists:
+            if base_title:
+                specific_queries.extend([
+                    (f"{artist} {base_title}", 30),
+                    (f"{base_title} {artist}", 30),
+                ])
+
+        title_queries = []
+        if raw_title:
+            title_queries.append((raw_title, 50))
+        if base_title:
+            title_queries.append((base_title, 50))
+        if normalized_base:
+            title_queries.append((normalized_base, 50))
+        if track.album_name and raw_primary_artist:
+            title_queries.append(
+                (f"{raw_primary_artist} {track.album_name}", 30)
+            )
+
+        broad_queries = []
+        for artist in credited_artists:
+            broad_queries.append((artist, 40))
+
+        return (
+            self.__deduplicate_queries(specific_queries),
+            self.__deduplicate_queries(title_queries),
+            self.__deduplicate_queries(broad_queries),
+        )
+
     def __search_on_origin_service(self, track: Track) -> Optional[Track]:
-        """
-        If it is suspected that the track originates from the same service, it tries to fetch it directly.
-        """
+        if not (
+            track.service_id
+            and track.service_name
+            and self._target.service_name
+            and track.service_name == self._target.service_name
+        ):
+            return None
 
-        if (track.service_name and self._target.service_name) and (track.service_name == self._target.service_name):
+        try:
             maybe_match = self._target.get_track(track.service_id)
-            
-            if maybe_match and track.matches(maybe_match):
-                return maybe_match
-            
-        return None
-    
+        except TrackNotFoundException:
+            return None
+
+        return self.select_best_candidate(track, [maybe_match] if maybe_match else [])
+
     def __search_by_isrc_only(self, track: Track) -> Optional[Track]:
-        """
-        If supported by the target service, this tries to search for a track using its ISRC.
-
-        In theory, this should be the most reliable way to match tracks.
-        """
-
         if not track.isrc or not self._target.supports_direct_isrc_querying:
             return None
-        
+
         try:
-            likely_match = self._target.get_track_by_isrc(
-                isrc=track.isrc
-            )
-
-            if likely_match and track.matches(likely_match):
-                return likely_match
-        except TrackNotFoundException as e:
-            pass
-
-        return None
-    
-    def __search_with_lenient_matching(self, track: Track) -> Optional[Track]:
-        """
-        Fallback search with very lenient matching criteria.
-        Ignores parenthetical content and uses lower similarity thresholds.
-        """
-
-        # Extract core title (without parenthetical content)
-        core_title = clean_str(extract_core_title(track.title))
-        artist = clean_str(track.primary_artist)
-        
-        if not core_title or not artist:
+            likely_match = self._target.get_track_by_isrc(isrc=track.isrc)
+        except TrackNotFoundException:
             return None
-        
-        # Search with just artist + core title
-        queries = [
-            f'{artist} {core_title}',
-            core_title,
-            artist
-        ]
-        
-        results: List[Track] = []
-        seen_ids = set()
-        
-        for query in queries:
-            if not query:
-                continue
-                
-            search_results = self._target.search_tracks(
-                query=query,
-                limit=50  # Cast a wide net
+
+        return self.select_best_candidate(
+            track,
+            [likely_match] if likely_match else [],
+        )
+
+    @staticmethod
+    def __query_key(query: str) -> str:
+        return " ".join(query.casefold().split())
+
+    @classmethod
+    def __deduplicate_queries(
+        cls,
+        queries: Sequence[Tuple[str, int]],
+    ) -> Tuple[Tuple[str, int], ...]:
+        unique = []
+        seen = set()
+        for query, limit in queries:
+            stripped = query.strip()
+            key = cls.__query_key(stripped)
+            if stripped and key not in seen:
+                seen.add(key)
+                unique.append((stripped, limit))
+        return tuple(unique)
+
+    @staticmethod
+    def __stable_candidate_key(track: Track) -> Tuple[str, ...]:
+        if track.service_id:
+            return (
+                "service-id",
+                (track.service_name or "").casefold(),
+                str(track.service_id),
             )
-            
-            for result in search_results:
-                result_key = (result.service_id, result.service_name)
-                if result_key not in seen_ids:
-                    seen_ids.add(result_key)
-                    results.append(result)
-        
-        # Sort results to prefer canonical versions over remixes/edits
-        # Canonical versions typically have shorter titles without version suffixes
-        def is_canonical(track_title: str) -> tuple:
-            """
-            Returns a tuple for sorting: (has_version_keywords, title_length)
-            Tracks without remix/version keywords and shorter titles are preferred.
-            """
-            lower_title = track_title.lower()
-            version_keywords = ['remix', 'mix', 'edit', 'version', 'remaster', 'extended', 'instrumental']
-            has_version = any(keyword in lower_title for keyword in version_keywords)
-            return (has_version, len(track_title))
-        
-        results.sort(key=lambda t: is_canonical(t.title))
-        
-        # Try matching with much lower threshold (0.60 instead of 0.75)
-        for result in results:
-            if track.matches(result, threshold=0.60):
-                return result
-        
-        return None
+
+        title = parse_title(track.title)
+        isrc = "".join(
+            character
+            for character in (track.isrc or "").casefold()
+            if character.isalnum()
+        )
+        if isrc:
+            return ("isrc", isrc)
+
+        musicbrainz_id = "".join(
+            character
+            for character in (track.musicbrainz_id or "").casefold()
+            if character.isalnum()
+        )
+        if musicbrainz_id:
+            return ("musicbrainz-id", musicbrainz_id)
+
+        artists = artist_entities(
+            track.primary_artist,
+            track.additional_artists,
+            title.featured_artists,
+        )
+        return (
+            "metadata",
+            (track.service_name or "").casefold(),
+            title.normalized_base_title,
+            "|".join(sorted(title.version_tags)),
+            title.version_qualifier,
+            "|".join(sorted(artists)),
+            str(track.duration_seconds or ""),
+            normalize_text(track.album_name),
+            str(track.track_number or ""),
+            str(track.release_year or ""),
+        )
+
+    @staticmethod
+    def __candidate_metadata_key(track: Track) -> Tuple[str, ...]:
+        return (
+            normalize_text(track.title),
+            normalize_text(track.primary_artist),
+            "|".join(
+                sorted(
+                    normalize_text(artist)
+                    for artist in (track.additional_artists or ())
+                )
+            ),
+            normalize_text(track.album_name),
+            str(track.duration_seconds or ""),
+            str(track.track_number or ""),
+            str(track.release_year or ""),
+            (track.isrc or "").casefold(),
+            (track.musicbrainz_id or "").casefold(),
+        )
+
+    @classmethod
+    def __assessment_rank(
+        cls,
+        candidate: Track,
+        assessment: MatchAssessment,
+    ) -> Tuple[float, float, Tuple[str, ...]]:
+        return (
+            assessment.score,
+            assessment.evidence_coverage,
+            cls.__candidate_metadata_key(candidate),
+        )
+
+    @staticmethod
+    def __same_recording_copy(left: Track, right: Track) -> bool:
+        left_title = parse_title(left.title)
+        right_title = parse_title(right.title)
+        if left_title.normalized_base_title != right_title.normalized_base_title:
+            return False
+        if left_title.version_tags != right_title.version_tags:
+            return False
+        if (
+            left_title.version_qualifier
+            and right_title.version_qualifier
+            and calculate_str_similarity(
+                left_title.version_qualifier,
+                right_title.version_qualifier,
+            ) < 0.9
+        ):
+            return False
+
+        left_artists = artist_entities(
+            left.primary_artist,
+            left.additional_artists,
+            left_title.featured_artists,
+        )
+        right_artists = artist_entities(
+            right.primary_artist,
+            right.additional_artists,
+            right_title.featured_artists,
+        )
+        if left_artists and right_artists and not (left_artists & right_artists):
+            return False
+
+        if left.duration_seconds and right.duration_seconds:
+            return abs(left.duration_seconds - right.duration_seconds) <= 2
+
+        return True

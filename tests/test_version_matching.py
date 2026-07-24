@@ -1,28 +1,54 @@
-#!/usr/bin/env python
-"""Test version matching behavior"""
-import sys
-sys.path.insert(0, '.')
+from tunesynctool.models import MatchPolicy, Track
 
-from tunesynctool.utilities import clean_str, extract_core_title, calculate_str_similarity
 
-# Test the normalization
-test_cases = [
-    ("White Lies - Original Mix", "White Lies - Instrumental Mix", True),
-    ("Back To Me", "Back To Me (feat. Micky Blue)", True),
-    ("Resurrection - Axwell's Recut Radio Version", "Resurrection (Axwell's Recut club version)", True),
-    ("White Lies - Original Mix", "Stars (original mix)", False),
-]
+def make_track(title: str, duration: int) -> Track:
+    return Track(
+        title=title,
+        primary_artist='Version Artist',
+        duration_seconds=duration,
+        service_name='subsonic',
+    )
 
-for title1, title2, should_match in test_cases:
-    core1 = clean_str(extract_core_title(title1))
-    core2 = clean_str(extract_core_title(title2))
-    similarity = calculate_str_similarity(core1, core2)
-    
-    print(f"\n{'=' * 70}")
-    print(f"Title 1: {title1}")
-    print(f"  Core: '{core1}'")
-    print(f"Title 2: {title2}")
-    print(f"  Core: '{core2}'")
-    print(f"Similarity: {similarity:.2f}")
-    print(f"Should match: {should_match}, Would match (>= 0.85): {similarity >= 0.85}")
-    print(f"✓ PASS" if (similarity >= 0.85) == should_match else "✗ FAIL")
+
+def test_strict_policy_rejects_original_to_instrumental():
+    source = make_track('Example Track - Original Mix', 326)
+    instrumental = make_track('Example Track - Instrumental Mix', 326)
+
+    assert not source.evaluate_match(
+        instrumental,
+        policy=MatchPolicy.STRICT,
+    ).accepted
+
+
+def test_strict_policy_rejects_radio_to_club_version():
+    radio = make_track('Example Track - Producer Recut Radio Version', 166)
+    club = make_track('Example Track (Producer Recut Club Version)', 298)
+
+    assert not radio.evaluate_match(
+        club,
+        policy=MatchPolicy.STRICT,
+    ).accepted
+
+
+def test_relaxed_policy_allows_close_soft_edit_difference():
+    radio = make_track('Example Track - Radio Edit', 180)
+    unlabeled = make_track('Example Track', 185)
+
+    assert not radio.evaluate_match(
+        unlabeled,
+        policy=MatchPolicy.STRICT,
+    ).accepted
+    assert radio.evaluate_match(
+        unlabeled,
+        policy=MatchPolicy.RELAXED,
+    ).accepted
+
+
+def test_relaxed_policy_still_rejects_dangerous_remix_difference():
+    source = make_track('Example Track', 187)
+    remix = make_track('Example Track (Guest Producer Remix)', 196)
+
+    assert not source.evaluate_match(
+        remix,
+        policy=MatchPolicy.RELAXED,
+    ).accepted

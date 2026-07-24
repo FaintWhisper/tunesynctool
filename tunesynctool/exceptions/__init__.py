@@ -21,3 +21,7 @@ class UnsupportedFeatureException(Exception):
     
     def __init__(self, message="Feature is not supported by the streaming service."):
         super().__init__(message)
+
+
+class OptionalDependencyException(ImportError):
+    """Indicates that a requested feature needs dependencies that were not installed."""

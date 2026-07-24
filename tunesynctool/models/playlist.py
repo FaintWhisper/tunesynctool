@@ -1,7 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
-
-from tunesynctool.models.track import Track
+from typing import Optional
 
 @dataclass
 class Playlist:

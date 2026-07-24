@@ -1,17 +1,23 @@
 from typing import List, Optional
 
 from tunesynctool.drivers import ServiceDriver
-from tunesynctool.models import Track
+from tunesynctool.exceptions import ServiceDriverException, TrackNotFoundException
 from tunesynctool.features.track_matcher import TrackMatcher
-from tunesynctool.utilities import clean_str, extract_core_title, calculate_str_similarity
-from tunesynctool.exceptions import UnsupportedFeatureException
+from tunesynctool.models import MatchPolicy, Track
+
 
 class PlaylistSynchronizer:
     """
     Attempts to synchronize a playlist between two services.
     """
 
-    def __init__(self, source_driver: ServiceDriver, target_driver: ServiceDriver):
+    def __init__(
+        self,
+        source_driver: ServiceDriver,
+        target_driver: ServiceDriver,
+        *,
+        match_policy: MatchPolicy | str = MatchPolicy.STRICT,
+    ):
         """
         Initializes a new instance of PlaylistSynchronizer.
 
@@ -21,21 +27,39 @@ class PlaylistSynchronizer:
 
         self.__source = source_driver
         self.__target = target_driver
-        self.__target_matcher = TrackMatcher(target_driver)
-    
-    def find_missing_tracks(self, source_playlist_tracks: List[Track], target_playlist_tracks: List[Track], debug: bool = False) -> List[Track]:
+        self.__target_matcher = TrackMatcher(
+            target_driver,
+            policy=match_policy,
+        )
+
+    def find_matching_track(
+        self,
+        source_track: Track,
+        candidate_tracks: List[Track],
+    ) -> Optional[Track]:
+        """Return the best compatible existing track, if one is unambiguous."""
+
+        return self.__target_matcher.select_best_candidate(
+            source_track,
+            candidate_tracks,
+        )
+
+    def find_missing_tracks(
+        self,
+        source_playlist_tracks: List[Track],
+        target_playlist_tracks: List[Track],
+    ) -> List[Track]:
         """
-        Returns a list of tracks that are present in the source playlist but not in the target playlist.
-        
-        Compares tracks by their core titles and artists to avoid treating different versions
-        (e.g., "Original Mix" vs "Instrumental Mix") as different tracks.
-        
+        Return source tracks that are not present in the target playlist.
+
+        Uses the configured recording policy and the same ranked evaluator as
+        remote track search.
+
         Note: If the source playlist contains duplicates of the same track, only the first
         occurrence needs to be in the target. Additional duplicates are ignored.
 
         :param source_playlist_tracks: The tracks in the source playlist.
         :param target_playlist_tracks: The tracks in the target playlist.
-        :param debug: If True, print debug information about comparisons.
         :return: A list of tracks that are present in the source playlist but not in the target playlist.
         """
 
@@ -43,64 +67,21 @@ class PlaylistSynchronizer:
         # Don't use processed_target_tracks - allow same target track to match multiple source duplicates
 
         for source_track in source_playlist_tracks:
-            match_found = False
+            matched_track = self.find_matching_track(
+                source_track,
+                target_playlist_tracks,
+            )
 
-            # Get core title and artist for source track
-            source_core_title = clean_str(extract_core_title(source_track.title))
-            source_artist = clean_str(source_track.primary_artist)
-            
-            if debug:
-                print(f"\n[DEBUG] Checking source: {source_track.primary_artist} - {source_track.title}")
-                print(f"        Core: '{source_core_title}' | Artist: '{source_artist}'")
-
-            for target_track in target_playlist_tracks:
-                # Removed the processed_target_tracks check to allow source duplicates
-                # to match the same target track
-
-                # First try exact matching (faster)
-                if source_track.matches(target_track):
-                    match_found = True
-                    break
-                
-                # Then try core title matching (for different versions of same track)
-                target_core_title = clean_str(extract_core_title(target_track.title))
-                target_artist = clean_str(target_track.primary_artist)
-                
-                if debug:
-                    print(f"        vs: {target_track.primary_artist} - {target_track.title}")
-                    print(f"            Core: '{target_core_title}' | Artist: '{target_artist}'")
-                
-                # If core titles and artists are very similar, consider it the same track
-                title_similarity = calculate_str_similarity(source_core_title, target_core_title)
-                artist_similarity = calculate_str_similarity(source_artist, target_artist)
-                
-                if debug:
-                    print(f"            Title sim: {title_similarity:.2f}, Artist sim: {artist_similarity:.2f}")
-                
-                # Check for artist word overlap if similarity is low
-                if artist_similarity < 0.5:
-                    source_artist_words = set(source_artist.split())
-                    target_artist_words = set(target_artist.split())
-                    if source_artist_words & target_artist_words:
-                        artist_similarity = 0.7
-                        if debug:
-                            print(f"            Artist boosted to 0.70 (word overlap: {source_artist_words & target_artist_words})")
-                
-                # If both core title and artist match well, it's the same track (different version)
-                if title_similarity >= 0.85 and artist_similarity >= 0.5:
-                    match_found = True
-                    if debug:
-                        print(f"            ✓ MATCH FOUND")
-                    break
-
-            if not match_found:
+            if not matched_track:
                 tracks_that_are_not_in_target_but_are_in_source.append(source_track)
-                if debug:
-                    print(f"        ✗ NO MATCH - marked as missing")
 
         return tracks_that_are_not_in_target_but_are_in_source
-    
-    def find_tracks_to_remove(self, source_playlist_tracks: List[Track], target_playlist_tracks: List[Track]) -> List[Track]:
+
+    def find_tracks_to_remove(
+        self,
+        source_playlist_tracks: List[Track],
+        target_playlist_tracks: List[Track],
+    ) -> List[Track]:
         """
         Returns tracks that exist on the target playlist but not on the source playlist.
 
@@ -109,15 +90,118 @@ class PlaylistSynchronizer:
 
         return self.find_missing_tracks(
             source_playlist_tracks=target_playlist_tracks,
-            target_playlist_tracks=source_playlist_tracks
+            target_playlist_tracks=source_playlist_tracks,
         )
-    
+
+    def resolve_target_order(
+        self,
+        source_playlist_tracks: List[Track],
+        target_playlist_tracks: List[Track],
+    ) -> tuple[List[Track], List[Track]]:
+        """Resolve every source entry to a usable target-service track.
+
+        The first returned list preserves source order. The second contains
+        source tracks that could not be resolved. No playlist mutations are
+        performed by this method.
+        """
+
+        desired_target_order: List[Track] = []
+        unmatched_tracks: List[Track] = []
+
+        for source_track in source_playlist_tracks:
+            resolved_track = self.find_matching_track(
+                source_track,
+                target_playlist_tracks,
+            )
+
+            if resolved_track is None or resolved_track.service_id is None:
+                resolved_track = self.__target_matcher.find_match(track=source_track)
+
+            if resolved_track is None or resolved_track.service_id is None:
+                unmatched_tracks.append(source_track)
+            else:
+                desired_target_order.append(resolved_track)
+
+        return desired_target_order, unmatched_tracks
+
+    def apply_target_order(
+        self,
+        target_playlist_id: str,
+        current_target_tracks: List[Track],
+        desired_target_order: List[Track],
+    ) -> None:
+        """Replace a target playlist after its complete order has been resolved."""
+
+        current_track_ids: List[str] = []
+        for track in current_target_tracks:
+            if track.service_id is None:
+                raise ServiceDriverException(
+                    "A current target track has no service ID; "
+                    "target playlist was not modified."
+                )
+            current_track_ids.append(track.service_id)
+
+        desired_track_ids: List[str] = []
+        for track in desired_target_order:
+            if track.service_id is None:
+                raise ServiceDriverException(
+                    "A resolved target track has no service ID; "
+                    "target playlist was not modified."
+                )
+            desired_track_ids.append(track.service_id)
+
+        if current_track_ids == desired_track_ids:
+            return
+
+        if current_track_ids:
+            self.__target.remove_tracks_from_playlist(
+                playlist_id=target_playlist_id,
+                track_ids=current_track_ids,
+            )
+
+        if desired_track_ids:
+            try:
+                self.__target.add_tracks_to_playlist(
+                    playlist_id=target_playlist_id,
+                    track_ids=desired_track_ids,
+                )
+            except Exception:
+                rollback_errors = []
+
+                try:
+                    self.__target.remove_tracks_from_playlist(
+                        playlist_id=target_playlist_id,
+                        track_ids=desired_track_ids,
+                    )
+                except Exception as error:
+                    rollback_errors.append(error)
+
+                if current_track_ids:
+                    try:
+                        self.__target.add_tracks_to_playlist(
+                            playlist_id=target_playlist_id,
+                            track_ids=current_track_ids,
+                        )
+                    except Exception as error:
+                        rollback_errors.append(error)
+
+                if rollback_errors:
+                    raise ServiceDriverException(
+                        "Target playlist update failed and its original order "
+                        "could not be fully restored."
+                    ) from ExceptionGroup(
+                        "Playlist rollback failures",
+                        rollback_errors,
+                    )
+                raise
+
     def sync(self, source_playlist_id: str, target_playlist_id: str) -> None:
         """
         Synchronizes the source playlist with the target playlist.
-        
+
         This completely rebuilds the target playlist to match the source playlist's order.
-        Tracks are matched intelligently to handle different versions (e.g., "Original Mix" vs "Instrumental Mix").
+        Tracks are matched with the configured strict or relaxed recording
+        policy.
 
         :param source_playlist_id: The ID of the source playlist.
         :param target_playlist_id: The ID of the target playlist.
@@ -125,65 +209,26 @@ class PlaylistSynchronizer:
         """
 
         source_playlist_tracks = self.__source.get_playlist_tracks(
-            playlist_id=source_playlist_id
+            playlist_id=source_playlist_id,
+            limit=0,
         )
         target_playlist_tracks = self.__target.get_playlist_tracks(
-            playlist_id=target_playlist_id
+            playlist_id=target_playlist_id,
+            limit=0,
         )
 
-        # Build the desired target playlist by matching each source track
-        desired_target_order = []
-        for source_track in source_playlist_tracks:
-            # First, try to find the track in the existing target playlist
-            matched_in_target = None
-            for target_track in target_playlist_tracks:
-                # Get core title and artist for comparison
-                source_core_title = clean_str(extract_core_title(source_track.title))
-                source_artist = clean_str(source_track.primary_artist)
-                target_core_title = clean_str(extract_core_title(target_track.title))
-                target_artist = clean_str(target_track.primary_artist)
-                
-                # Check if they match (same logic as find_missing_tracks)
-                if source_track.matches(target_track):
-                    matched_in_target = target_track
-                    break
-                
-                title_similarity = calculate_str_similarity(source_core_title, target_core_title)
-                artist_similarity = calculate_str_similarity(source_artist, target_artist)
-                
-                if artist_similarity < 0.5:
-                    source_artist_words = set(source_artist.split())
-                    target_artist_words = set(target_artist.split())
-                    if source_artist_words & target_artist_words:
-                        artist_similarity = 0.7
-                
-                if title_similarity >= 0.85 and artist_similarity >= 0.5:
-                    matched_in_target = target_track
-                    break
-            
-            # If found in existing target, use it; otherwise search the target service
-            if matched_in_target:
-                desired_target_order.append(matched_in_target)
-            else:
-                # Try to find the track on the target service
-                searched_track = self.__target_matcher.find_match(track=source_track)
-                if searched_track:
-                    desired_target_order.append(searched_track)
-                # If not found anywhere, skip this source track
-        
-        # Clear the target playlist and rebuild it in source order
-        if target_playlist_tracks:
-            try:
-                self.__target.remove_tracks_from_playlist(
-                    playlist_id=target_playlist_id,
-                    track_ids=[track.service_id for track in target_playlist_tracks]
-                )
-            except UnsupportedFeatureException:
-                pass
-        
-        # Add all tracks in the desired order
-        if desired_target_order:
-            self.__target.add_tracks_to_playlist(
-                playlist_id=target_playlist_id,
-                track_ids=[track.service_id for track in desired_target_order]
+        desired_target_order, unmatched_tracks = self.resolve_target_order(
+            source_playlist_tracks,
+            target_playlist_tracks,
+        )
+        if unmatched_tracks:
+            raise TrackNotFoundException(
+                f"{len(unmatched_tracks)} source track(s) could not be matched; "
+                "target playlist was not modified."
             )
+
+        self.apply_target_order(
+            target_playlist_id,
+            target_playlist_tracks,
+            desired_target_order,
+        )

@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tunesynctool"
-version = "1.4.0"
+version = "1.5.0"
 authors = [
-    { name="WilliamNT", email="wntbox@gmail.com" },
-    { name="FaintWhisper", email="amitkmbt@gmail.com" }
+    { name="WilliamNT" },
+    { name="FaintWhisper" }
 ]
 description = "A package and CLI tool to build scripts that interact with various music streaming services."
 readme = "README.md"
+requires-python = ">=3.11"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Programming Language :: Python :: 3",
@@ -23,11 +24,18 @@ dependencies = [
     "py-sonic",
     "musicbrainzngs",
     "thefuzz",
-    "streamrip",
     "ytmusicapi",
     "click",
     "tqdm",
-    'importlib-metadata; python_version<"3.11"',
+]
+
+[project.optional-dependencies]
+deezer = [
+    "streamrip>=2.1,<3",
+    "deezer-py>=1.3.6,<2",
+]
+spotify-public = [
+    "spotifyscraper>=3.9.2,<4",
 ]
 
 [project.urls]

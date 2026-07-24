@@ -1,9 +1,6 @@
 from tunesynctool import Configuration, SpotifyDriver, SubsonicDriver, TrackMatcher
 
-# Method 1:
-# Load environment variables from a .env file
-# from dotenv import load_dotenv
-# load_dotenv()
+# Method 1: load configuration from environment variables
 # config = Configuration.from_env()
 
 # Method 2:
