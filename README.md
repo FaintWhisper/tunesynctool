@@ -62,13 +62,7 @@ checked using title, artist, album, and duration.
 
 ## Usage
 
-Install the official upstream release from PyPI:
-
-```shell
-pip install tunesynctool
-```
-
-The PyPI package is maintained by the upstream project and may not contain this fork's changes. To use the fork-specific version directly from GitHub:
+Install the fork-specific version directly from GitHub:
 
 ```shell
 pip install git+https://github.com/FaintWhisper/tunesynctool.git
