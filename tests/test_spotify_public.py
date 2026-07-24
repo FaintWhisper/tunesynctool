@@ -1,4 +1,3 @@
-import importlib.util
 import importlib
 from pathlib import Path
 import subprocess
@@ -32,18 +31,15 @@ def run_in_fresh_python(source: str) -> subprocess.CompletedProcess:
     )
 
 
-def test_spotifyscraper_is_a_spotify_public_only_project_dependency():
+def test_spotifyscraper_is_a_required_project_dependency():
     with (REPOSITORY_ROOT / "pyproject.toml").open("rb") as project_file:
         project = tomllib.load(project_file)["project"]
 
-    assert not any(
-        dependency.startswith("spotifyscraper")
-        for dependency in project["dependencies"]
-    )
     assert any(
         dependency.startswith("spotifyscraper>=3.9.2,<4")
-        for dependency in project["optional-dependencies"]["spotify-public"]
+        for dependency in project["dependencies"]
     )
+    assert "spotify-public" not in project["optional-dependencies"]
 
 
 def test_base_import_does_not_load_spotifyscraper():
@@ -72,87 +68,6 @@ def test_spotify_public_is_a_registered_source_only_provider():
     assert "spotify-public" in SOURCE_ONLY_PROVIDERS
     assert "spotify-public" in UNSAFE_SYNC_SOURCE_PROVIDERS
     assert get_driver_by_name("spotify").__name__ == "SpotifyDriver"
-
-
-def test_missing_spotify_public_extra_has_an_actionable_error():
-    result = run_in_fresh_python(
-        """
-        import builtins
-
-        real_import = builtins.__import__
-
-        def import_without_spotifyscraper(
-            name, globals=None, locals=None, fromlist=(), level=0
-        ):
-            if name == "spotify_scraper" or name.startswith("spotify_scraper."):
-                raise ModuleNotFoundError(
-                    "No module named 'spotify_scraper'",
-                    name="spotify_scraper",
-                )
-            return real_import(name, globals, locals, fromlist, level)
-
-        builtins.__import__ = import_without_spotifyscraper
-
-        from tunesynctool import Configuration
-        from tunesynctool.cli.utils.driver import get_driver_by_name
-        from tunesynctool.exceptions import OptionalDependencyException
-
-        try:
-            get_driver_by_name("spotify-public")(Configuration())
-        except OptionalDependencyException as error:
-            assert "Public Spotify playlist support is not installed" in str(error)
-            assert "tunesynctool[spotify-public]" in str(error)
-        else:
-            raise AssertionError(
-                "SpotifyPublicDriver should require the spotify-public extra."
-            )
-        """
-    )
-
-    assert result.returncode == 0, result.stderr
-
-
-def test_missing_spotify_public_extra_has_an_actionable_cli_error():
-    result = run_in_fresh_python(
-        """
-        import builtins
-
-        real_import = builtins.__import__
-
-        def import_without_spotifyscraper(
-            name, globals=None, locals=None, fromlist=(), level=0
-        ):
-            if name == "spotify_scraper" or name.startswith("spotify_scraper."):
-                raise ModuleNotFoundError(
-                    "No module named 'spotify_scraper'",
-                    name="spotify_scraper",
-                )
-            return real_import(name, globals, locals, fromlist, level)
-
-        builtins.__import__ = import_without_spotifyscraper
-
-        from click.testing import CliRunner
-        from tunesynctool.cli.main import cli
-
-        result = CliRunner().invoke(
-            cli,
-            [
-                "transfer",
-                "--from",
-                "spotify-public",
-                "--to",
-                "spotify",
-                "playlist-id",
-            ],
-        )
-
-        assert result.exit_code == 2, result.output
-        assert "Public Spotify playlist support is not installed" in result.output
-        assert "tunesynctool[spotify-public]" in result.output
-        """
-    )
-
-    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize("command", ["transfer", "sync"])
@@ -259,11 +174,7 @@ def test_transfer_sanitizes_public_track_fetch_errors(monkeypatch):
     assert "Traceback" not in result.output
 
 
-@pytest.mark.skipif(
-    importlib.util.find_spec("spotify_scraper") is None,
-    reason="The optional SpotifyScraper dependency is not installed.",
-)
-def test_spotify_public_driver_constructs_when_extra_is_installed():
+def test_spotify_public_driver_constructs_with_standard_install():
     from tunesynctool import Configuration, SpotifyPublicDriver
 
     driver = SpotifyPublicDriver(Configuration())

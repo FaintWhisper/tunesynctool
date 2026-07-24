@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timezone
-import importlib.util
 import json
 
 import pytest
@@ -52,10 +51,6 @@ def test_mapper_rejects_incomplete_dtos_instead_of_silently_defaulting():
         SpotifyPublicMapper().map_track(IncompleteTrack())
 
 
-@pytest.mark.skipif(
-    importlib.util.find_spec("spotify_scraper") is None,
-    reason="The optional SpotifyScraper dependency is not installed.",
-)
 def test_mapper_contract_with_spotifyscraper_3_models():
     from spotify_scraper.models import AlbumRef, ArtistRef, Playlist, Track, UserRef
 

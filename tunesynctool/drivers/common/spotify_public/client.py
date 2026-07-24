@@ -1,4 +1,4 @@
-"""Small, optional-dependency boundary around SpotifyScraper."""
+"""Small runtime boundary around SpotifyScraper."""
 
 from __future__ import annotations
 
@@ -6,22 +6,7 @@ from dataclasses import dataclass
 from importlib import import_module
 from typing import Any, Callable
 
-from tunesynctool.exceptions import (
-    OptionalDependencyException,
-    PlaylistNotFoundException,
-    ServiceDriverException,
-)
-
-_INSTALL_MESSAGE = (
-    "Public Spotify playlist support is not installed. Install this fork with "
-    "the 'spotify-public' extra, for example: "
-    'pip install "tunesynctool[spotify-public] @ '
-    'git+https://github.com/FaintWhisper/tunesynctool.git"'
-)
-_INCOMPATIBLE_MESSAGE = (
-    "Public Spotify playlist support needs a compatible SpotifyScraper 3.x "
-    "installation. Reinstall the 'spotify-public' extra."
-)
+from tunesynctool.exceptions import PlaylistNotFoundException, ServiceDriverException
 _NOT_FOUND_MESSAGE = (
     "The Spotify playlist is missing, private, or otherwise unavailable."
 )
@@ -46,36 +31,26 @@ class _SpotifyScraperRuntime:
 
 
 def _load_runtime() -> _SpotifyScraperRuntime:
-    """Import SpotifyScraper only when this optional feature is selected."""
+    """Load the required SpotifyScraper dependency when the provider is used."""
 
-    try:
-        module = import_module("spotify_scraper")
-    except ModuleNotFoundError as error:
-        if error.name == "spotify_scraper":
-            raise OptionalDependencyException(_INSTALL_MESSAGE) from error
-        raise
-
-    try:
-        return _SpotifyScraperRuntime(
-            client_factory=module.SpotifyClient,
-            url_error=module.URLError,
-            not_found_error=module.NotFoundError,
-            scraper_error=module.SpotifyScraperError,
-        )
-    except AttributeError as error:
-        raise OptionalDependencyException(_INCOMPATIBLE_MESSAGE) from error
+    module = import_module("spotify_scraper")
+    return _SpotifyScraperRuntime(
+        client_factory=module.SpotifyClient,
+        url_error=module.URLError,
+        not_found_error=module.NotFoundError,
+        scraper_error=module.SpotifyScraperError,
+    )
 
 
 class SpotifyScraperClient:
-    """Fetch public playlist DTOs while hiding the optional implementation."""
+    """Fetch public playlist DTOs while isolating the implementation."""
 
     def __init__(
         self,
         *,
         _runtime_loader: Callable[[], _SpotifyScraperRuntime] = _load_runtime,
     ) -> None:
-        # Loading here keeps ordinary tunesynctool imports dependency-free while
-        # still surfacing a missing extra as soon as this driver is selected.
+        # Load only when this provider is selected so ordinary imports stay light.
         self._runtime = _runtime_loader()
 
     def get_playlist(self, playlist_id: str, *, max_tracks: int | None) -> Any:

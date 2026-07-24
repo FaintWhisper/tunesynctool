@@ -6,7 +6,6 @@ from typing import Any, List, Optional, Protocol
 
 from tunesynctool.drivers.service_driver import ServiceDriver
 from tunesynctool.exceptions import (
-    OptionalDependencyException,
     PlaylistNotFoundException,
     ServiceDriverException,
     UnsupportedFeatureException,
@@ -61,7 +60,6 @@ class SpotifyPublicDriver(ServiceDriver):
                 max_tracks=max_tracks,
             )
         except (
-            OptionalDependencyException,
             PlaylistNotFoundException,
             ServiceDriverException,
         ):

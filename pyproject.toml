@@ -21,6 +21,7 @@ classifiers = [
 ]
 dependencies = [
     "spotipy",
+    "spotifyscraper>=3.9.2,<4",
     "py-sonic",
     "musicbrainzngs",
     "thefuzz",
@@ -33,9 +34,6 @@ dependencies = [
 deezer = [
     "streamrip>=2.1,<3",
     "deezer-py>=1.3.6,<2",
-]
-spotify-public = [
-    "spotifyscraper>=3.9.2,<4",
 ]
 
 [project.urls]

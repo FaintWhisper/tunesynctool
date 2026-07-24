@@ -1,1 +1,1 @@
-"""Tests for the optional public Spotify playlist driver."""
+"""Tests for the public Spotify playlist driver."""

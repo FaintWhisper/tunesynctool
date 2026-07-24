@@ -7,7 +7,6 @@ from tunesynctool.drivers.common.spotify_public.client import (
     _SpotifyScraperRuntime,
 )
 from tunesynctool.exceptions import (
-    OptionalDependencyException,
     PlaylistNotFoundException,
     ServiceDriverException,
 )
@@ -106,37 +105,3 @@ def test_wrapper_sanitizes_other_spotify_scraper_errors():
 
     assert "access_token=secret" not in str(caught.value)
     assert "upgrading SpotifyScraper" in str(caught.value)
-
-
-def test_missing_dependency_error_is_actionable(monkeypatch):
-    def missing_module(name):
-        raise ModuleNotFoundError(
-            "No module named 'spotify_scraper'",
-            name="spotify_scraper",
-        )
-
-    monkeypatch.setattr(
-        "tunesynctool.drivers.common.spotify_public.client.import_module",
-        missing_module,
-    )
-
-    with pytest.raises(OptionalDependencyException) as caught:
-        SpotifyScraperClient()
-
-    assert str(caught.value).startswith(
-        "Public Spotify playlist support is not installed"
-    )
-    assert "tunesynctool[spotify-public]" in str(caught.value)
-
-
-def test_missing_transitive_dependency_is_not_misreported(monkeypatch):
-    def broken_install(name):
-        raise ModuleNotFoundError("No module named 'httpx'", name="httpx")
-
-    monkeypatch.setattr(
-        "tunesynctool.drivers.common.spotify_public.client.import_module",
-        broken_install,
-    )
-
-    with pytest.raises(ModuleNotFoundError, match="httpx"):
-        SpotifyScraperClient()
